@@ -5,7 +5,8 @@
 using namespace v8;
 
 struct CloneData {
-	char* name;
+	char* from;
+	char* to;
 	Persistent<Function> callback;
 };
 
@@ -15,8 +16,7 @@ void cloneWork(uv_work_t* req) {
 	git_repository* repo;
 	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
 	opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
-	//git_clone(&repo, "https://git.ktxsoftware.com/git/Kha.git", "Kha", &opts);
-	git_clone(&repo, "https://github.com/RobDangerous/Hurrican-Deployment.git", "Hurrican", &opts);
+	git_clone(&repo, cloneData->from, cloneData->to, &opts);
 	git_repository_free(repo);
 }
 
@@ -35,20 +35,24 @@ void cloneAfter(uv_work_t* req) {
 
 	cloneData->callback.Dispose();
 
+	delete[] cloneData->from;
+	delete[] cloneData->to;
 	delete cloneData;
 	delete req;
 }
 
-Handle<Value> load(const Arguments& args) {
+Handle<Value> clone(const Arguments& args) {
 	HandleScope scope;
 
 	uv_work_t* req = new uv_work_t;
 	CloneData* cloneData = new CloneData;
 	req->data = cloneData;
 
-	//cloneData->name = 
-
-	cloneData->callback = Persistent<Function>::New(Local<Function>::Cast(args[0]));
+	cloneData->from = new char[200];
+	args[0]->ToString()->WriteAscii(cloneData->from, 0, 199);
+	cloneData->to = new char[200];
+	args[1]->ToString()->WriteAscii(cloneData->to, 0, 199);
+	cloneData->callback = Persistent<Function>::New(Local<Function>::Cast(args[2]));
 
 	uv_queue_work(uv_default_loop(), req, cloneWork, (uv_after_work_cb)cloneAfter);
 
@@ -56,7 +60,7 @@ Handle<Value> load(const Arguments& args) {
 }
 
 void init(Handle<Object> exports) {
-	exports->Set(String::NewSymbol("load"), FunctionTemplate::New(load)->GetFunction());
+	exports->Set(String::NewSymbol("clone"), FunctionTemplate::New(clone)->GetFunction());
 }
 
 NODE_MODULE(git, init)
