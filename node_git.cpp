@@ -10,11 +10,16 @@ struct CloneData {
 	Persistent<Function> callback;
 };
 
+int credentials(git_cred** cred, const char* url, const char* user_from_url, unsigned int allowed_types, void* payload) {
+	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
+}
+
 void cloneWork(uv_work_t* req) {
 	CloneData* cloneData = (CloneData*)req->data;
 	
 	git_repository* repo;
 	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
+	opts.cred_acquire_cb = credentials;
 	opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
 	git_clone(&repo, cloneData->from, cloneData->to, &opts);
 	git_repository_free(repo);
