@@ -1,0 +1,8 @@
+{
+  "name": "git",
+  "version": "0.0.0",
+  "description": "libgit2 for node",
+  "main": "./build/Release/git",
+  "private": true,
+  "gypfile": true
+}
