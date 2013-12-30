@@ -1,7 +1,11 @@
+#ifndef NO_V8
 #include <node.h>
 #include <v8.h>
+#endif
 #include <git2.h>
+#include <string.h>
 
+#ifndef NO_V8
 using namespace v8;
 
 struct CloneData {
@@ -9,20 +13,69 @@ struct CloneData {
 	char* to;
 	Persistent<Function> callback;
 };
+#endif
 
-int credentials(git_cred** cred, const char* url, const char* user_from_url, unsigned int allowed_types, void* payload) {
-	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
-}
+//int credentials(git_cred** cred, const char* url, const char* user_from_url, unsigned int allowed_types, void* payload) {
+//	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
+//}
 
-void cloneWork(uv_work_t* req) {
-	CloneData* cloneData = (CloneData*)req->data;
+int initSubmodule(git_submodule* sm, const char* name, void* payload) {
+	git_submodule_init(sm, 0);
 	
 	git_repository* repo;
 	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
-	opts.cred_acquire_cb = credentials;
-	opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
-	git_clone(&repo, cloneData->from, cloneData->to, &opts);
+	char path[1001];
+	strcpy(path, (char*)payload);
+	strcat(path, "/");
+	strcat(path, git_submodule_path(sm));
+	//printf("To: %s", path);
+	git_clone(&repo, 
+		//git_submodule_url(sm),
+		"https://github.com/KTXSoftware/kake.git",
+		path, &opts);
 	git_repository_free(repo);
+
+	/*git_repository* repo;
+	git_repository_open(&repo, git_submodule_path(sm));
+	
+	git_remote* remote;
+	git_remote_load(&remote, repo, "origin");
+	git_remote_fetch(remote);
+	git_remote_free(remote);
+	
+	git_reference* reference;
+	git_branch_lookup(&reference, repo, "master", GIT_BRANCH_REMOTE);
+
+	git_merge_head* merge_head;
+	git_merge_head_from_ref(&merge_head, repo, reference);
+	git_reference_free(reference);
+
+	const git_merge_head* merge_heads[1];
+	merge_heads[0] = merge_head;
+	git_merge_result* result;
+	git_merge(&result, repo, merge_heads, 1, NULL);
+	git_repository_free(repo);*/
+
+	return 0;
+}
+
+void clone(char* from, char* to) {
+	git_repository* repo;
+	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
+	//opts.cred_acquire_cb = credentials;
+	//opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
+	git_clone(&repo, from, to, &opts);
+
+	git_submodule_foreach(repo, initSubmodule, (void*)git_repository_path(repo));
+
+	git_repository_free(repo);
+}
+
+#ifndef NO_V8
+
+void cloneWork(uv_work_t* req) {
+	CloneData* cloneData = (CloneData*)req->data;
+	clone(cloneData->from, cloneData->to);
 }
 
 void cloneAfter(uv_work_t* req) {
@@ -69,3 +122,9 @@ void init(Handle<Object> exports) {
 }
 
 NODE_MODULE(git, init)
+
+#endif
+
+int main(int argc, char** argv) {
+	clone("https://github.com/KTXSoftware/Kha.git", "C:/Users/Robert/Projekte/Kit-Test/Kha");
+}
