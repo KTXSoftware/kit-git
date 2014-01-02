@@ -15,34 +15,88 @@ struct CloneData {
 };
 #endif
 
+struct Config {
+	const char* serverDir;
+	const char* projectsDir;
+};
+
+struct SubmoduleConfig {
+	Config* config;
+	const char* parentPath;
+};
+
 //int credentials(git_cred** cred, const char* url, const char* user_from_url, unsigned int allowed_types, void* payload) {
 //	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
 //}
 
 int initSubmodule(git_submodule* sm, const char* name, void* payload) {
+	SubmoduleConfig* config = (SubmoduleConfig*)payload;
+
 	git_submodule_init(sm, 0);
 	
 	git_repository* repo;
 	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
-	char path[1001];
-	strcpy(path, (char*)payload);
-	strcat(path, "/");
-	strcat(path, git_submodule_path(sm));
-	//printf("To: %s", path);
-	git_clone(&repo, 
-		//git_submodule_url(sm),
-		"https://github.com/KTXSoftware/kake.git",
-		path, &opts);
+	
+	char from[1001];
+	strcpy(from, config->config->serverDir);
+	strcat(from, &git_submodule_url(sm)[3]);
+
+	char to[1001];
+	strcpy(to, config->config->projectsDir);
+	strcat(to, &git_submodule_url(sm)[3]);
+
+	git_clone(&repo, from, to, &opts);
+
+	char to2[1001];
+	strcpy(to2, config->parentPath);
+	to2[strlen(to2) - 5] = 0;
+	strcat(to2, git_submodule_path(sm));
+
+	git_clone(&repo, to, to2, &opts);
+
+	SubmoduleConfig subConfig;
+	subConfig.config = config->config;
+	subConfig.parentPath = git_repository_path(repo);
+	git_submodule_foreach(repo, initSubmodule, &subConfig);
+
 	git_repository_free(repo);
 
-	/*git_repository* repo;
-	git_repository_open(&repo, git_submodule_path(sm));
-	
+	return 0;
+}
+
+void clone(char* project, Config* config) {
+	git_repository* repo;
+	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
+	//opts.cred_acquire_cb = credentials;
+	//opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
+
+	char from[1001];
+	strcpy(from, config->serverDir);
+	strcat(from, project);
+
+	char to[1001];
+	strcpy(to, config->projectsDir);
+	strcat(to, project);
+
+	git_clone(&repo, from, to, &opts);
+
+	SubmoduleConfig subConfig;
+	subConfig.config = config;
+	subConfig.parentPath = git_repository_path(repo);
+	git_submodule_foreach(repo, initSubmodule, &subConfig);
+
+	git_repository_free(repo);
+}
+
+void update(char* dir) {
+	git_repository* repo;
+	git_repository_open(&repo, dir);
+
 	git_remote* remote;
 	git_remote_load(&remote, repo, "origin");
 	git_remote_fetch(remote);
 	git_remote_free(remote);
-	
+
 	git_reference* reference;
 	git_branch_lookup(&reference, repo, "master", GIT_BRANCH_REMOTE);
 
@@ -54,20 +108,6 @@ int initSubmodule(git_submodule* sm, const char* name, void* payload) {
 	merge_heads[0] = merge_head;
 	git_merge_result* result;
 	git_merge(&result, repo, merge_heads, 1, NULL);
-	git_repository_free(repo);*/
-
-	return 0;
-}
-
-void clone(char* from, char* to) {
-	git_repository* repo;
-	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
-	//opts.cred_acquire_cb = credentials;
-	//opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
-	git_clone(&repo, from, to, &opts);
-
-	git_submodule_foreach(repo, initSubmodule, (void*)git_repository_path(repo));
-
 	git_repository_free(repo);
 }
 
@@ -126,5 +166,8 @@ NODE_MODULE(git, init)
 #endif
 
 int main(int argc, char** argv) {
-	clone("https://github.com/KTXSoftware/Kha.git", "C:/Users/Robert/Projekte/Kit-Test/Kha");
+	Config config;
+	config.serverDir = "https://github.com/KTXSoftware/";
+	config.projectsDir = "C:/Users/Robert/Projekte/Kit-Test/";
+	clone("Kha", &config);
 }
