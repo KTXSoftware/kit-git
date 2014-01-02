@@ -5,25 +5,25 @@
 #include <git2.h>
 #include <string.h>
 
-#ifndef NO_V8
-using namespace v8;
-
-struct CloneData {
-	char* from;
-	char* to;
-	Persistent<Function> callback;
-};
-#endif
-
 struct Config {
-	const char* serverDir;
-	const char* projectsDir;
+	char* serverDir;
+	char* projectsDir;
 };
 
 struct SubmoduleConfig {
 	Config* config;
 	const char* parentPath;
 };
+
+#ifndef NO_V8
+using namespace v8;
+
+struct UpdateData {
+	char* project;
+	Config config;
+	Persistent<Function> callback;
+};
+#endif
 
 //int credentials(git_cred** cred, const char* url, const char* user_from_url, unsigned int allowed_types, void* payload) {
 //	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
@@ -115,58 +115,53 @@ int initSubmodule(git_submodule* sm, const char* name, void* payload) {
 	return 0;
 }
 
-void clone(char* project, Config* config) {
-	git_repository* repo;
-	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
-	//opts.cred_acquire_cb = credentials;
-	//opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
-
-	char from[1001];
-	strcpy(from, config->serverDir);
-	strcat(from, project);
-
-	char to[1001];
-	strcpy(to, config->projectsDir);
-	strcat(to, project);
-
-	git_clone(&repo, from, to, &opts);
-
-	SubmoduleConfig subConfig;
-	subConfig.config = config;
-	subConfig.parentPath = git_repository_path(repo);
-	git_submodule_foreach(repo, initSubmodule, &subConfig);
-
-	git_repository_free(repo);
-}
-
-void update(char* project, Config* config) {
+void update(const char* project, Config* config) {
 	char dir[1001];
 	strcpy(dir, config->projectsDir);
 	strcat(dir, project);
 
 	git_repository* repo;
-	git_repository_open(&repo, dir);
+	if (git_repository_open(&repo, dir) == 0) {
+		git_reference* ref;
+		git_repository_head(&ref, repo);
+		const char* branch;
+		git_branch_name(&branch, ref);
+		pull(repo, branch);
 
-	pull(repo, "master");
+		SubmoduleConfig subConfig;
+		subConfig.config = config;
+		subConfig.parentPath = git_repository_path(repo);
+		git_submodule_foreach(repo, initSubmodule, &subConfig);
+	}
+	else {
+		git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
+		//opts.cred_acquire_cb = credentials;
+		//opts.transport_flags = GIT_TRANSPORTFLAGS_NO_CHECK_CERT;
 
-	SubmoduleConfig subConfig;
-	subConfig.config = config;
-	subConfig.parentPath = git_repository_path(repo);
-	git_submodule_foreach(repo, initSubmodule, &subConfig);
+		char from[1001];
+		strcpy(from, config->serverDir);
+		strcat(from, project);
 
+		git_clone(&repo, from, dir, &opts);
+
+		SubmoduleConfig subConfig;
+		subConfig.config = config;
+		subConfig.parentPath = git_repository_path(repo);
+		git_submodule_foreach(repo, initSubmodule, &subConfig);
+	}
 	git_repository_free(repo);
 }
 
 #ifndef NO_V8
 
-void cloneWork(uv_work_t* req) {
-	CloneData* cloneData = (CloneData*)req->data;
-	clone(cloneData->from, cloneData->to);
+void updateWork(uv_work_t* req) {
+	UpdateData* updateData = (UpdateData*)req->data;
+	update(updateData->project, &updateData->config);
 }
 
-void cloneAfter(uv_work_t* req) {
+void updateAfter(uv_work_t* req) {
 	HandleScope scope;
-	CloneData* cloneData = (CloneData*)req->data;
+	UpdateData* updateData = (UpdateData*)req->data;
 
 	//Handle<Value> argv[] = {
 	//	Null(),
@@ -174,47 +169,51 @@ void cloneAfter(uv_work_t* req) {
 	//};
 	
 	TryCatch try_catch;
-	cloneData->callback->Call(Context::GetCurrent()->Global(), 0, nullptr);
+	updateData->callback->Call(Context::GetCurrent()->Global(), 0, nullptr);
 	if (try_catch.HasCaught()) node::FatalException(try_catch);
 
-	cloneData->callback.Dispose();
+	updateData->callback.Dispose();
 
-	delete[] cloneData->from;
-	delete[] cloneData->to;
-	delete cloneData;
+	delete[] updateData->project;
+	delete[] updateData->config.serverDir;
+	delete[] updateData->config.projectsDir;
+	delete updateData;
 	delete req;
 }
 
-Handle<Value> clone(const Arguments& args) {
+Handle<Value> update(const Arguments& args) {
 	HandleScope scope;
 
 	uv_work_t* req = new uv_work_t;
-	CloneData* cloneData = new CloneData;
-	req->data = cloneData;
+	UpdateData* updateData = new UpdateData;
+	req->data = updateData;
 
-	cloneData->from = new char[200];
-	args[0]->ToString()->WriteAscii(cloneData->from, 0, 199);
-	cloneData->to = new char[200];
-	args[1]->ToString()->WriteAscii(cloneData->to, 0, 199);
-	cloneData->callback = Persistent<Function>::New(Local<Function>::Cast(args[2]));
+	updateData->project = new char[1001];
+	args[0]->ToString()->WriteAscii(updateData->project, 0, 1000);
+	updateData->config.serverDir = new char[1001];
+	args[1]->ToString()->WriteAscii(updateData->config.serverDir, 0, 1000);
+	updateData->config.projectsDir = new char[1001];
+	args[2]->ToString()->WriteAscii(updateData->config.projectsDir, 0, 1000);
+	updateData->callback = Persistent<Function>::New(Local<Function>::Cast(args[2]));
 
-	uv_queue_work(uv_default_loop(), req, cloneWork, (uv_after_work_cb)cloneAfter);
+	uv_queue_work(uv_default_loop(), req, updateWork, (uv_after_work_cb)updateAfter);
 
 	return scope.Close(Undefined());
 }
 
 void init(Handle<Object> exports) {
-	exports->Set(String::NewSymbol("clone"), FunctionTemplate::New(clone)->GetFunction());
+	exports->Set(String::NewSymbol("update"), FunctionTemplate::New(update)->GetFunction());
 }
 
 NODE_MODULE(git, init)
 
-#endif
+#else
 
 int main(int argc, char** argv) {
 	Config config;
 	config.serverDir = "https://github.com/KTXSoftware/";
 	config.projectsDir = "C:/Users/Robert/Projekte/Kit-Test/";
-	//clone("Kha", &config);
 	update("Kha", &config);
 }
+
+#endif
