@@ -29,37 +29,88 @@ struct SubmoduleConfig {
 //	return git_cred_userpass_plaintext_new(cred, "turrican", "themachine");
 //}
 
+void pull(git_repository* repo, const char* branch) {
+	git_remote* remote;
+	git_remote_load(&remote, repo, "origin");
+	git_remote_fetch(remote);
+	git_remote_free(remote);
+
+	char remoteBranch[1001];
+	strcpy(remoteBranch, "origin/");
+	strcat(remoteBranch, branch);
+	git_reference* reference;
+	git_branch_lookup(&reference, repo, remoteBranch, GIT_BRANCH_REMOTE);
+
+	git_merge_head* merge_head;
+	git_merge_head_from_ref(&merge_head, repo, reference);
+	git_reference_free(reference);
+
+	const git_merge_head* merge_heads[1];
+	merge_heads[0] = merge_head;
+	git_merge_result* result;
+	git_merge(&result, repo, merge_heads, 1, NULL);
+}
+
 int initSubmodule(git_submodule* sm, const char* name, void* payload) {
 	SubmoduleConfig* config = (SubmoduleConfig*)payload;
-
-	git_submodule_init(sm, 0);
-	
 	git_repository* repo;
-	git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
-	
-	char from[1001];
-	strcpy(from, config->config->serverDir);
-	strcat(from, &git_submodule_url(sm)[3]);
 
-	char to[1001];
-	strcpy(to, config->config->projectsDir);
-	strcat(to, &git_submodule_url(sm)[3]);
+	if (git_submodule_open(&repo, sm) < 0) {
+		git_submodule_init(sm, 0);
 
-	git_clone(&repo, from, to, &opts);
+		git_clone_options opts = GIT_CLONE_OPTIONS_INIT;
 
-	char to2[1001];
-	strcpy(to2, config->parentPath);
-	to2[strlen(to2) - 5] = 0;
-	strcat(to2, git_submodule_path(sm));
+		char from[1001];
+		strcpy(from, config->config->serverDir);
+		strcat(from, &git_submodule_url(sm)[3]);
 
-	git_clone(&repo, to, to2, &opts);
+		char to[1001];
+		strcpy(to, config->config->projectsDir);
+		strcat(to, &git_submodule_url(sm)[3]);
 
-	SubmoduleConfig subConfig;
-	subConfig.config = config->config;
-	subConfig.parentPath = git_repository_path(repo);
-	git_submodule_foreach(repo, initSubmodule, &subConfig);
+		git_clone(&repo, from, to, &opts);
+		git_repository_free(repo);
 
-	git_repository_free(repo);
+		char to2[1001];
+		strcpy(to2, config->parentPath);
+		to2[strlen(to2) - 5] = 0;
+		strcat(to2, git_submodule_path(sm));
+
+		git_clone(&repo, to, to2, &opts);
+
+		SubmoduleConfig subConfig;
+		subConfig.config = config->config;
+		subConfig.parentPath = git_repository_path(repo);
+		git_submodule_foreach(repo, initSubmodule, &subConfig);
+
+		git_repository_free(repo);
+	}
+	else {
+		char global[1001];
+		strcpy(global, config->config->projectsDir);
+		strcat(global, &git_submodule_url(sm)[3]);
+
+		git_repository* repo;
+		
+		git_repository_open(&repo, global);
+		pull(repo, git_submodule_branch(sm));
+		git_repository_free(repo);
+
+		char local[1001];
+		strcpy(local, config->parentPath);
+		local[strlen(local) - 5] = 0;
+		strcat(local, git_submodule_path(sm));
+
+		git_repository_open(&repo, global);
+		pull(repo, git_submodule_branch(sm));
+
+		SubmoduleConfig subConfig;
+		subConfig.config = config->config;
+		subConfig.parentPath = git_repository_path(repo);
+		git_submodule_foreach(repo, initSubmodule, &subConfig);
+
+		git_repository_free(repo);
+	}
 
 	return 0;
 }
@@ -88,26 +139,21 @@ void clone(char* project, Config* config) {
 	git_repository_free(repo);
 }
 
-void update(char* dir) {
+void update(char* project, Config* config) {
+	char dir[1001];
+	strcpy(dir, config->projectsDir);
+	strcat(dir, project);
+
 	git_repository* repo;
 	git_repository_open(&repo, dir);
 
-	git_remote* remote;
-	git_remote_load(&remote, repo, "origin");
-	git_remote_fetch(remote);
-	git_remote_free(remote);
+	pull(repo, "master");
 
-	git_reference* reference;
-	git_branch_lookup(&reference, repo, "master", GIT_BRANCH_REMOTE);
+	SubmoduleConfig subConfig;
+	subConfig.config = config;
+	subConfig.parentPath = git_repository_path(repo);
+	git_submodule_foreach(repo, initSubmodule, &subConfig);
 
-	git_merge_head* merge_head;
-	git_merge_head_from_ref(&merge_head, repo, reference);
-	git_reference_free(reference);
-
-	const git_merge_head* merge_heads[1];
-	merge_heads[0] = merge_head;
-	git_merge_result* result;
-	git_merge(&result, repo, merge_heads, 1, NULL);
 	git_repository_free(repo);
 }
 
@@ -169,5 +215,6 @@ int main(int argc, char** argv) {
 	Config config;
 	config.serverDir = "https://github.com/KTXSoftware/";
 	config.projectsDir = "C:/Users/Robert/Projekte/Kit-Test/";
-	clone("Kha", &config);
+	//clone("Kha", &config);
+	update("Kha", &config);
 }
