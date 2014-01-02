@@ -194,7 +194,7 @@ Handle<Value> update(const Arguments& args) {
 	args[1]->ToString()->WriteAscii(updateData->config.serverDir, 0, 1000);
 	updateData->config.projectsDir = new char[1001];
 	args[2]->ToString()->WriteAscii(updateData->config.projectsDir, 0, 1000);
-	updateData->callback = Persistent<Function>::New(Local<Function>::Cast(args[2]));
+	updateData->callback = Persistent<Function>::New(Local<Function>::Cast(args[3]));
 
 	uv_queue_work(uv_default_loop(), req, updateWork, (uv_after_work_cb)updateAfter);
 
