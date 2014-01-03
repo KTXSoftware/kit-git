@@ -68,7 +68,8 @@ int initSubmodule(git_submodule* sm, const char* name, void* payload) {
 		strcpy(to, config->config->projectsDir);
 		strcat(to, &git_submodule_url(sm)[3]);
 
-		git_clone(&repo, from, to, &opts);
+		if (git_repository_open(&repo, to) == 0) pull(repo, git_submodule_branch(sm));
+		else git_clone(&repo, from, to, &opts);
 		git_repository_free(repo);
 
 		char to2[1001];
