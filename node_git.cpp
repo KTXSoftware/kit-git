@@ -170,7 +170,7 @@ void updateAfter(uv_work_t* req) {
 	//};
 	
 	TryCatch try_catch;
-	updateData->callback->Call(Context::GetCurrent()->Global(), 0, nullptr);
+	updateData->callback->Call(Context::GetCurrent()->Global(), 0, NULL);
 	if (try_catch.HasCaught()) node::FatalException(try_catch);
 
 	updateData->callback.Dispose();
