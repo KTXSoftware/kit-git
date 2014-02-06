@@ -53,17 +53,18 @@ void pull(git_repository* repo, const char* branch) {
 	git_oid id;
 	git_merge_result_fastforward_id(&id, result);
 
-	//git_reference* master;
-	//git_branch_lookup(&master, repo, branch, GIT_BRANCH_LOCAL);
-
-	//git_reference* newhead;
-	//git_reference_set_target(&newhead, master, &id, NULL, "Fast forwarding");
-
 	git_object* obj;
 	git_object_lookup(&obj, repo, &id, GIT_OBJ_ANY);
 
-	//git_checkout_head(repo, NULL);
-	git_checkout_tree(repo, obj, NULL);
+	git_checkout_opts opts = GIT_CHECKOUT_OPTS_INIT;
+	opts.checkout_strategy = GIT_CHECKOUT_SAFE_CREATE;
+	git_checkout_tree(repo, obj, &opts);
+
+	git_reference* master;
+	git_branch_lookup(&master, repo, branch, GIT_BRANCH_LOCAL);
+
+	git_reference* newhead;
+	git_reference_set_target(&newhead, master, &id, NULL, "Fast forwarding");
 }
 
 int initSubmodule(git_submodule* sm, const char* name, void* payload) {
