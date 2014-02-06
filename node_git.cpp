@@ -49,6 +49,21 @@ void pull(git_repository* repo, const char* branch) {
 	merge_heads[0] = merge_head;
 	git_merge_result* result;
 	git_merge(&result, repo, merge_heads, 1, NULL);
+
+	git_oid id;
+	git_merge_result_fastforward_id(&id, result);
+
+	//git_reference* master;
+	//git_branch_lookup(&master, repo, branch, GIT_BRANCH_LOCAL);
+
+	//git_reference* newhead;
+	//git_reference_set_target(&newhead, master, &id, NULL, "Fast forwarding");
+
+	git_object* obj;
+	git_object_lookup(&obj, repo, &id, GIT_OBJ_ANY);
+
+	//git_checkout_head(repo, NULL);
+	git_checkout_tree(repo, obj, NULL);
 }
 
 int initSubmodule(git_submodule* sm, const char* name, void* payload) {
@@ -214,7 +229,7 @@ int main(int argc, char** argv) {
 	Config config;
 	config.serverDir = "https://github.com/KTXSoftware/";
 	config.projectsDir = "C:/Users/Robert/Projekte/Kit-Test/";
-	update("Kha", &config);
+	update("vorbis", &config);
 }
 
 #endif
